@@ -20,6 +20,8 @@ export default class RequestTransformer {
             let routePart = this.routeParts[i]
             if(!routePart.startsWith(':')) return routePart == urlPart ? acc : false
             routePart = routePart.substring(1)
+            const filter = this.filters && this.filters.get(routePart)
+            if(filter && typeof filter == 'function' && !filter(urlPart)) return false
             routePart = `\$\{${routePart}\}`
             return acc.replace(routePart, urlPart)
         }, query)
@@ -38,12 +40,14 @@ export default class RequestTransformer {
         return this.envKey
     }
 
-    constructor(route, method){
+    constructor(route, method, filters){
         if(!route) throw 'The route parameter must present in constructor.'
-        this.method = method && method.toUpperCase() || 'GET'
+        if(typeof route != 'string') throw 'The route parameter must be a string.'
         route = route.toLowerCase()
         if(!route.match(/^[a-z0-9_\-\:\/]+$/)) throw 'The route parameter contains illegal symbols.'
-        this.envKey = `${PATH_PREFIX}_${this.method}_${route.replace(/\:/g, `${API_SPLITTER}_`).replace(/\//g, '_').toUpperCase()}`
+        this.method  = method && typeof method == 'string' && method.toUpperCase() || 'GET'
+        this.filters = filters && filters instanceof Map && filters || method && method instanceof Map && method
+        this.envKey  = `${PATH_PREFIX}_${this.method}_${route.replace(/\:/g, `${API_SPLITTER}_`).replace(/\//g, '_').toUpperCase()}`
         this.routeParts = `${API_PREFIX}${route}`.split('/')
     }
 }
