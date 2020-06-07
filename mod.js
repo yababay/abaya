@@ -13,7 +13,7 @@ export default class RequestTransformer {
 
     async transformRequest(req){
         if(!req.url.startsWith(API_PREFIX)) return 551
-        const urlParts = req.url.split('/')
+        const urlParts = req.url.replace(/\?.*$/, '').split('/')
         if(urlParts.length != this.routeParts.length) return 552
         let query = this.getQuery(req.method)
         if(!query) return false
