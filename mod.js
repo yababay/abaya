@@ -7,24 +7,40 @@ const paramsReg = /\$\{[a-z0-9_]+\}/g
 let API_PREFIX   = getEnv('API_PREFIX') || '/'
 if(!API_PREFIX.match(/\/$/)) API_PREFIX += '/'
 
+const bracefy = (param)=> `\$\{${param}\}`
 
 export default class RequestTransformer {
 
-    transformRequest(req){
-        if(!req.url.startsWith(API_PREFIX)) return false
+    async transformRequest(req){
+        if(!req.url.startsWith(API_PREFIX)) return 551
         const urlParts = req.url.split('/')
-        if(urlParts.length != this.routeParts.length) return false
-        const query = this.getQuery(req.method)
-        return urlParts.reduce((acc, urlPart, i)=> {
+        if(urlParts.length != this.routeParts.length) return 552
+        let query = this.getQuery(req.method)
+        if(!query) return false
+        query = urlParts.reduce((acc, urlPart, i)=> {
             if(!acc) return false
             let routePart = this.routeParts[i]
             if(!routePart.startsWith(':')) return routePart == urlPart ? acc : false
             routePart = routePart.substring(1)
             const filter = this.filters && this.filters.get(routePart)
             if(filter && typeof filter == 'function' && !filter(urlPart)) return false
-            routePart = `\$\{${routePart}\}`
+            routePart = bracefy(routePart)
             return acc.replace(routePart, urlPart)
         }, query)
+        if(!query) return 553
+        if(this.method == 'POST' || this.method == 'PUT'){
+            try{
+                const params = JSON.parse(new TextDecoder().decode(await Deno.readAll(req.body)))
+                Object.keys(params).forEach(key=> {
+                    const value = params[key]
+                    const filter = this.filters && this.filters.get(key)
+                    if(filter && typeof filter == 'function' && !filter(value)) return
+                    query = query.replace(bracefy(key), value)
+                })
+            }
+            catch(ex){return 554}
+        }
+        return !query.match(/\$\{/) && query || 555
     }
 
     getQuery(method){
