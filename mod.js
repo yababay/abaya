@@ -66,7 +66,7 @@ export default class RequestTransformer {
         if(METHODS.slice(0, 2).includes(req.method)) return connection && JSON.stringify((await connection.query(query)).rows) || query
         const params = req.params && JSON.parse(req.params) || JSON.parse(new TextDecoder().decode(await Deno.readAll(req.body)))
         Object.keys(params).forEach(key=> query = query.replace(bracefy(key), params[key]))
-        if(query.match(paramsReg)) throw 550
+        if(query.match(paramsReg)) throw `The query is not fullfilled: ${query}`
         return connection && JSON.stringify((await connection.query(query)).rows) || query
     }
 }
