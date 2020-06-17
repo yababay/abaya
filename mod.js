@@ -52,7 +52,7 @@ export default class RequestTransformer {
                 }
                 if(!hasParam) continue
                 const param = pathPart.substring(1)
-                query = query.replace(bracefy(param), urlPart)
+                query = query.replace(bracefy(param), decodeURIComponent(urlPart))
             }
             if(!query) continue
             return query
@@ -63,10 +63,10 @@ export default class RequestTransformer {
     async transformRequest(req, connection){
         let query = this.mapRequest(req)
         if(!query) throw 404
-        if(METHODS.slice(0, 2).includes(req.method)) return connection && JSON.stringify(await connection.query(query)) || query
+        if(METHODS.slice(0, 2).includes(req.method)) return connection && JSON.stringify((await connection.query(query)).rows) || query
         const params = req.params && JSON.parse(req.params) || JSON.parse(new TextDecoder().decode(await Deno.readAll(req.body)))
-        Object.keys(params).forEach(key=> query = query.replace(bracefy(key), decodeURIComponent(params[key])))
+        Object.keys(params).forEach(key=> query = query.replace(bracefy(key), params[key]))
         if(query.match(paramsReg)) throw 550
-        return connection && JSON.stringify(await connection.query(query)) || query
+        return connection && JSON.stringify((await connection.query(query)).rows) || query
     }
 }
