@@ -12,7 +12,15 @@ This module for Deno transforms http urls into queries (sql and not only). The q
     select * from manufacturers where id = 123
 ```
 
-The method of http request is also involved into query building.
+The method of http request is also involved into query building (see `.env`).
+
+You can test the API runnitg with [Postman](https://www.postman.com/) application. Just run:
+
+```
+deno run --allow-read --allow-env --allow-net server.js
+```
+
+then import `postman_collection.json` from this repository and play with it.
 
 ## Why this project is named Abaya?
 

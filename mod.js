@@ -1,69 +1,72 @@
 import getEnv from 'https://raw.githubusercontent.com/yababay/deno-env-filter/master/mod.js'
 
 const API_SPLITTER = getEnv('API_SPLITTER') || 'ABAYA' 
-const PATH_PREFIX = 'API_PATH'
+const PATH_PREFIX  = getEnv('PATH_PREFIX')  || 'API_PATH'
+const API_PREFIX   = `${getEnv('API_PREFIX') || ''}`
+const METHODS      = ['GET', 'DELETE', 'POST', 'PUT']
+
 const paramsReg = /\$\{[a-z0-9_]+\}/g
+const bracefy = param=> `\$\{${param}\}`
+let regEnv = new RegExp(`${API_SPLITTER}_`, 'g')
 
-let API_PREFIX   = getEnv('API_PREFIX') || '/'
-if(!API_PREFIX.match(/\/$/)) API_PREFIX += '/'
-
-const bracefy = (param)=> `\$\{${param}\}`
+const parseEnv = (env)=> {
+    env = env.substring(PATH_PREFIX.length + 1).replace(regEnv, ':').replace(/_/g, '/').toLowerCase()
+    const obj = {}
+    for(const method of METHODS){
+        const withSlash = `${method.toLowerCase()}/`
+        if(!env.startsWith(withSlash)) continue
+        obj.method = method.toUpperCase()
+        obj.path = `${API_PREFIX}/${env.replace(withSlash, '')}`
+    } 
+    return obj
+}
 
 export default class RequestTransformer {
 
-    async transformRequest(req){
-        if(!req.url.startsWith(API_PREFIX)) return 551
-        const urlParts = req.url.replace(/\?.*$/, '').split('/')
-        if(urlParts.length != this.routeParts.length) return 552
-        let query = this.getQuery(req.method)
-        if(!query) return false
-        query = urlParts.reduce((acc, urlPart, i)=> {
-            if(!acc) return false
-            let routePart = this.routeParts[i]
-            if(!routePart.startsWith(':')) return routePart == urlPart ? acc : false
-            routePart = routePart.substring(1)
-            const filter = this.filters && this.filters.get(routePart)
-            if(filter && typeof filter == 'function' && !filter(urlPart)) return false
-            routePart = bracefy(routePart)
-            return acc.replace(routePart, urlPart)
-        }, query)
-        if(!query) return 553
-        if(this.method == 'POST' || this.method == 'PUT'){
-            try{
-                const params = JSON.parse(new TextDecoder().decode(await Deno.readAll(req.body)))
-                Object.keys(params).forEach(key=> {
-                    const value = params[key]
-                    const filter = this.filters && this.filters.get(key)
-                    if(filter && typeof filter == 'function' && !filter(value)) return
-                    query = query.replace(bracefy(key), value)
-                })
+    constructor(){
+        const routes = getEnv(env=> Object.keys(env)
+            .filter(key=> key.startsWith(PATH_PREFIX))
+            .map(key=> [key, getEnv(key)])
+            .map(arr=> [parseEnv(arr[0]), arr[1]])
+        )
+        regEnv = null
+        this.routes = new Map(routes)
+    }
+
+    mapRequest(req){
+        const {method, url} = req
+        const urlParts = url.replace(/\?.*$/, '').replace(API_PREFIX, '').split('/')
+        for(const key of this.routes.keys()){
+            let query = this.routes.get(key)
+            if(method != key.method) continue
+            if(!url.startsWith(API_PREFIX)) continue
+            const pathParts = key.path.replace(API_PREFIX, '').split('/')
+            if(pathParts.length != urlParts.length) continue
+            for(const i in urlParts){
+                const pathPart = pathParts[i]
+                const urlPart = urlParts[i]
+                const hasParam = pathPart.startsWith(':')
+                if(!hasParam && urlPart != pathPart){
+                    query = false
+                    break
+                }
+                if(!hasParam) continue
+                const param = pathPart.substring(1)
+                query = query.replace(bracefy(param), urlPart)
             }
-            catch(ex){return 554}
+            if(!query) continue
+            return query
         }
-        return !query.match(/\$\{/) && query || 555
+        return false
     }
 
-    getQuery(method){
-        if(method.toUpperCase() != this.method) return false
-        return getEnv(this.envKey)
-    }
-
-    getFullRoute(){
-        return this.routeParts.join('/')
-    }
-
-    getEnvKey(){
-        return this.envKey
-    }
-
-    constructor(route, method, filters){
-        if(!route) throw 'The route parameter must present in constructor.'
-        if(typeof route != 'string') throw 'The route parameter must be a string.'
-        route = route.toLowerCase()
-        if(!route.match(/^[a-z0-9_\-\:\/]+$/)) throw 'The route parameter contains illegal symbols.'
-        this.method  = method && typeof method == 'string' && method.toUpperCase() || 'GET'
-        this.filters = filters && filters instanceof Map && filters || method && method instanceof Map && method
-        this.envKey  = `${PATH_PREFIX}_${this.method}_${route.replace(/\:/g, `${API_SPLITTER}_`).replace(/\//g, '_').toUpperCase()}`
-        this.routeParts = `${API_PREFIX}${route}`.split('/')
+    async transformRequest(req, connection){
+        let query = this.mapRequest(req)
+        if(!query) throw 404
+        if(METHODS.slice(0, 2).includes(req.method)) return connection && JSON.stringify(await connection.query(query)) || query
+        const params = req.params && JSON.parse(req.params) || JSON.parse(new TextDecoder().decode(await Deno.readAll(req.body)))
+        Object.keys(params).forEach(key=> query = query.replace(bracefy(key), decodeURIComponent(params[key])))
+        if(query.match(paramsReg)) throw 550
+        return connection && JSON.stringify(await connection.query(query)) || query
     }
 }
